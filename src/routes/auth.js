@@ -113,6 +113,7 @@ authRouter.post('/login', async (req, res, next) => {
     }
 
     const sellerSlug = await ensureSellerSlug(account.sellers);
+    const token = createSessionToken({ sellerId: account.seller_id, accountId: account.id, email });
     res.json({ token, seller: toSeller({ ...account.sellers, seller_slug: sellerSlug }) });
   } catch (error) {
     next(error);
