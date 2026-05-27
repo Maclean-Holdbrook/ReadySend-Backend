@@ -1,112 +1,132 @@
 # ReadySend Backend
 
-Express API for the ReadySend trust-confirmation wedge.
+Express API for ReadySend, a seller order confirmation app for online sellers.
 
-## What This Backend Handles
+The backend handles seller authentication, public buyer order requests, receipt confirmation links, subscriptions, contact emails, and Supabase data access.
 
-- Seller profile creation.
-- Order creation with signed buyer confirmation links.
-- Public buyer receipt lookup.
-- Buyer confirmation with proof trail creation.
-- Dispatch-readiness checklist updates.
-- Manual WhatsApp reminder copy.
-- Product event logging for the confirmation funnel.
+## Live Services
 
-## Setup
+- API: https://api.readysend.online
+- Frontend: https://readysend.online
 
-1. Create a Supabase project.
-2. Run `supabase/schema.sql` in the Supabase SQL editor.
-3. Copy `.env.example` to `.env`.
-4. Fill in `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `TOKEN_SECRET`.
-5. Install dependencies and start:
+Health check:
+
+```text
+GET /health
+```
+
+## Main Features
+
+- Seller signup and login.
+- Seller public order link generation.
+- Public buyer order request submission.
+- Seller dashboard order creation and editing.
+- Buyer receipt pages and confirmation flow.
+- Pending and confirmed order tracking.
+- Monthly order limits by subscription plan.
+- Paystack subscription checkout and webhook handling.
+- Resend email notifications for contact messages and buyer request alerts.
+
+## Tech Stack
+
+- Node.js
+- Express
+- Supabase
+- Paystack
+- Resend
+- Vercel serverless deployment
+
+## Local Setup
 
 ```bash
 npm install
+cp .env.example .env
 npm run dev
 ```
 
-## API
+Required `.env` values:
 
-### Health
+```env
+PORT=4000
+APP_BASE_URL=http://localhost:4000
+WEB_APP_URL=http://localhost:5173
+ALLOWED_ORIGINS=http://localhost:5173
 
-`GET /health`
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+TOKEN_SECRET=
 
-### Sellers
+RESEND_API_KEY=
+CONTACT_TO_EMAIL=
+CONTACT_FROM_EMAIL=ReadySend <onboarding@resend.dev>
 
-`POST /api/sellers`
-
-```json
-{
-  "businessName": "Ama Styles",
-  "whatsappPhone": "+233...",
-  "category": "clothing",
-  "mainChannel": "whatsapp",
-  "logoUrl": "https://..."
-}
+PAYSTACK_SECRET_KEY=
+PAYSTACK_PRO_PLAN_CODE=
+PAYSTACK_GROWTH_PLAN_CODE=
 ```
 
-### Orders
+Production values should use:
 
-`POST /api/orders`
-
-```json
-{
-  "sellerId": "uuid",
-  "buyerName": "Esi",
-  "buyerPhone": "+233...",
-  "productName": "Blue dress",
-  "productVariation": "Size M",
-  "quantity": 1,
-  "amount": 250,
-  "currency": "GHS",
-  "deliveryArea": "Accra",
-  "deliveryAddress": "Optional precise address",
-  "deliveryDate": "2026-05-25",
-  "paymentTerms": "pay_on_delivery",
-  "internalNotes": "Do not show this to buyer"
-}
+```env
+APP_BASE_URL=https://api.readysend.online
+WEB_APP_URL=https://readysend.online
+ALLOWED_ORIGINS=https://readysend.online,https://www.readysend.online
 ```
 
-Returns the order plus `confirmationUrl`.
+## Supabase
 
-`GET /api/orders?sellerId=uuid`
+Run the SQL files in `supabase/` in order, or use `supabase/schema.sql` for a full schema setup.
 
-`GET /api/orders/:id?sellerId=uuid`
+Important tables include:
 
-`PATCH /api/orders/:id/readiness`
+- `sellers`
+- `seller_accounts`
+- `orders`
+- `buyer_order_requests`
+- `confirmation_proofs`
+- `seller_subscriptions`
+- `payments`
 
-```json
-{
-  "sellerId": "uuid",
-  "packageReady": true
-}
+Security note: the backend uses the Supabase service role key and must remain server-side only. RLS still needs to be added before production hardening.
+
+## Paystack
+
+Paystack is used for ReadySend seller subscriptions.
+
+Plans currently supported:
+
+- Pro: GHS 39/month
+- Growth: GHS 89/month
+
+Set these environment variables in production:
+
+```env
+PAYSTACK_SECRET_KEY=sk_live_...
+PAYSTACK_PRO_PLAN_CODE=...
+PAYSTACK_GROWTH_PLAN_CODE=...
 ```
 
-`POST /api/orders/:id/reminder-copy`
+Webhook URL:
 
-```json
-{
-  "sellerId": "uuid"
-}
+```text
+https://api.readysend.online/api/billing/webhook
 ```
 
-### Buyer Receipt
+## Deployment
 
-`GET /api/receipts/:token`
+This backend is prepared for Vercel with:
 
-`POST /api/receipts/:token/confirm`
+- `api/index.js`
+- `vercel.json`
 
-```json
-{
-  "buyerName": "Esi",
-  "buyerPhone": "+233...",
-  "deliveryAddress": "Updated address if needed"
-}
-```
+Recommended Vercel settings:
 
-## Security Notes
+- Framework preset: Other
+- Root directory: repository root
+- Domain: `api.readysend.online`
 
-- Buyer links use opaque random tokens. The database stores only a SHA-256 hash.
-- The API uses the Supabase service role key and must run server-side only.
-- Public receipt responses mask phone numbers and never expose seller internal notes.
-- Buyer confirmation and proof creation happen inside a Supabase RPC transaction.
+## Related Repository
+
+Frontend:
+
+https://github.com/Maclean-Holdbrook/ReadySend
