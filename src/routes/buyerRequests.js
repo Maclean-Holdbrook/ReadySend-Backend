@@ -171,7 +171,7 @@ publicBuyerRequestsRouter.post('/sellers/:slug/requests', async (req, res, next)
 
     if (error) throw badRequest('buyer_request_create_failed', error.message);
 
-    sendBuyerRequestNotification({ seller, request: data }).catch((emailError) => {
+    await sendBuyerRequestNotification({ seller, request: data }).catch((emailError) => {
       console.error('Buyer request notification failed', {
         sellerId: seller.id,
         requestId: data.id,
