@@ -54,10 +54,12 @@ async function sendBuyerRequestNotification({ seller, request }) {
     .maybeSingle();
 
   if (error) throw badRequest('seller_email_lookup_failed', error.message);
-  if (!account?.email) return null;
+  if (!account?.email) {
+    return { status: 'skipped', reason: 'seller_email_missing' };
+  }
 
   const dashboardUrl = `${config.webAppUrl}/#dashboard`;
-  return sendEmail({
+  const payload = await sendEmail({
     to: account.email,
     subject: `New ReadySend order request from ${request.buyer_name}`,
     text: [
@@ -77,6 +79,8 @@ async function sendBuyerRequestNotification({ seller, request }) {
       `Open your dashboard to review, edit, approve, or reject it: ${dashboardUrl}`
     ].join('\n')
   });
+
+  return { status: 'sent', id: payload?.id || null };
 }
 
 async function createOrderFromInput(input) {
@@ -171,15 +175,16 @@ publicBuyerRequestsRouter.post('/sellers/:slug/requests', async (req, res, next)
 
     if (error) throw badRequest('buyer_request_create_failed', error.message);
 
-    await sendBuyerRequestNotification({ seller, request: data }).catch((emailError) => {
+    const notification = await sendBuyerRequestNotification({ seller, request: data }).catch((emailError) => {
       console.error('Buyer request notification failed', {
         sellerId: seller.id,
         requestId: data.id,
         message: emailError.message
       });
+      return { status: 'failed', reason: emailError.code || 'email_send_failed' };
     });
 
-    res.status(201).json({ request: toBuyerRequestResponse(data) });
+    res.status(201).json({ request: toBuyerRequestResponse(data), notification });
   } catch (error) {
     next(error);
   }
