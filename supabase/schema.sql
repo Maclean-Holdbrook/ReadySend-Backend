@@ -134,6 +134,24 @@ create index if not exists idx_seller_accounts_email on public.seller_accounts(l
 create unique index if not exists idx_sellers_seller_slug on public.sellers(seller_slug);
 create index if not exists idx_buyer_order_requests_seller_status_created on public.buyer_order_requests(seller_id, status, created_at desc);
 
+alter table public.sellers enable row level security;
+alter table public.orders enable row level security;
+alter table public.seller_accounts enable row level security;
+alter table public.confirmation_proofs enable row level security;
+alter table public.order_events enable row level security;
+alter table public.buyer_order_requests enable row level security;
+alter table public.seller_subscriptions enable row level security;
+alter table public.payments enable row level security;
+
+revoke all on table public.sellers from anon, authenticated;
+revoke all on table public.orders from anon, authenticated;
+revoke all on table public.seller_accounts from anon, authenticated;
+revoke all on table public.confirmation_proofs from anon, authenticated;
+revoke all on table public.order_events from anon, authenticated;
+revoke all on table public.buyer_order_requests from anon, authenticated;
+revoke all on table public.seller_subscriptions from anon, authenticated;
+revoke all on table public.payments from anon, authenticated;
+
 create or replace function public.touch_updated_at()
 returns trigger
 language plpgsql
@@ -265,3 +283,7 @@ begin
   return query select v_order.id, v_proof_id, 'confirmed'::text;
 end;
 $$;
+
+revoke execute on function public.touch_updated_at() from public, anon, authenticated;
+revoke execute on function public.confirm_order_with_proof(text, text, text, text) from public, anon, authenticated;
+grant execute on function public.confirm_order_with_proof(text, text, text, text) to service_role;

@@ -87,7 +87,7 @@ Important tables include:
 - `seller_subscriptions`
 - `payments`
 
-Security note: the backend uses the Supabase service role key and must remain server-side only. RLS still needs to be added before production hardening.
+Security note: the backend uses the Supabase service role key and must remain server-side only. RLS is enabled to deny direct client table access; normal app access is expected to go through the backend.
 
 ## Paystack
 
