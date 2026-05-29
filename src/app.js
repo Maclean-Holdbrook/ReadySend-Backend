@@ -5,7 +5,7 @@ import { config } from './config.js';
 import { errorHandler, mapSupabaseRpcError } from './errors.js';
 import { confirmReceiptToken, fetchPublicReceipt, renderReceiptErrorPage, renderReceiptPage } from './receiptPage.js';
 import { authRouter } from './routes/auth.js';
-import { billingRouter, paystackWebhookRouter } from './routes/billing.js';
+import { billingRouter, flutterwaveWebhookRouter } from './routes/billing.js';
 import { buyerRequestsRouter, publicBuyerRequestsRouter } from './routes/buyerRequests.js';
 import { contactRouter } from './routes/contact.js';
 import { ordersRouter } from './routes/orders.js';
@@ -16,7 +16,7 @@ import { confirmReceiptSchema } from './validation.js';
 export function createApp() {
   const app = express();
 
-  app.use('/api/billing/webhook', express.raw({ type: 'application/json', limit: '100kb' }), paystackWebhookRouter);
+  app.use('/api/billing/webhook', express.raw({ type: 'application/json', limit: '100kb' }), flutterwaveWebhookRouter);
 
   app.use(
     helmet({

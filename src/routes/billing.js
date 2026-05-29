@@ -7,22 +7,22 @@ import { getSellerSubscription } from '../subscriptions.js';
 import { supabase } from '../supabase.js';
 
 export const billingRouter = Router();
-export const paystackWebhookRouter = Router();
+export const flutterwaveWebhookRouter = Router();
 
 const plans = {
   pro: {
     name: 'Pro',
-    amount: 3900,
+    amount: 39,
     currency: 'GHS',
     orderLimit: 150,
-    envPlanCode: 'PAYSTACK_PRO_PLAN_CODE'
+    envPlanId: 'FLUTTERWAVE_PRO_PLAN_ID'
   },
   growth: {
     name: 'Growth',
-    amount: 8900,
+    amount: 89,
     currency: 'GHS',
     orderLimit: 500,
-    envPlanCode: 'PAYSTACK_GROWTH_PLAN_CODE'
+    envPlanId: 'FLUTTERWAVE_GROWTH_PLAN_ID'
   }
 };
 
@@ -31,9 +31,9 @@ const checkoutSchema = z.object({
   plan: z.enum(['pro', 'growth'])
 });
 
-function requirePaystackKey() {
-  if (!config.paystackSecretKey) {
-    throw badRequest('paystack_not_configured', 'Paystack secret key is not configured.');
+function requireFlutterwaveKey() {
+  if (!config.flutterwaveSecretKey) {
+    throw badRequest('flutterwave_not_configured', 'Flutterwave secret key is not configured.');
   }
 }
 
@@ -48,27 +48,79 @@ function referenceFor(sellerId, plan) {
   return `RS-${plan}-${sellerId.slice(0, 8)}-${Date.now()}-${suffix}`;
 }
 
-async function paystackRequest(path, options = {}) {
-  requirePaystackKey();
+async function flutterwaveRequest(path, options = {}) {
+  requireFlutterwaveKey();
 
-  const response = await fetch(`https://api.paystack.co${path}`, {
+  const response = await fetch(`https://api.flutterwave.com/v3${path}`, {
     ...options,
     headers: {
-      Authorization: `Bearer ${config.paystackSecretKey}`,
+      Authorization: `Bearer ${config.flutterwaveSecretKey}`,
       'Content-Type': 'application/json',
       ...(options.headers || {})
     }
   });
 
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok || payload.status === false) {
-    throw badRequest('paystack_request_failed', payload.message || 'Paystack request failed.');
+  if (!response.ok || payload.status === 'error') {
+    throw badRequest('flutterwave_request_failed', payload.message || 'Flutterwave request failed.');
   }
 
   return payload;
 }
 
-async function activateSubscription({ sellerId, planKey, reference, paystackData }) {
+function metadataFromTransaction(data) {
+  return data?.meta || data?.metadata || {};
+}
+
+function isMatchingSuccessfulPayment(data, payment) {
+  const plan = plans[payment.plan_key];
+  return (
+    Boolean(plan) &&
+    data?.status === 'successful' &&
+    data.tx_ref === payment.provider_reference &&
+    Number(data.amount) === plan.amount &&
+    data.currency === plan.currency
+  );
+}
+
+async function verifyFlutterwaveReference(reference) {
+  const query = new URLSearchParams({ tx_ref: reference });
+  const payload = await flutterwaveRequest(`/transactions/verify_by_reference?${query.toString()}`);
+  return payload.data;
+}
+
+async function verifyFlutterwaveTransaction(id) {
+  const payload = await flutterwaveRequest(`/transactions/${encodeURIComponent(id)}/verify`);
+  return payload.data;
+}
+
+async function activateVerifiedTransaction(data) {
+  const reference = data?.tx_ref;
+  if (!reference) return false;
+
+  const { data: payment, error } = await supabase
+    .from('payments')
+    .select('*')
+    .eq('provider_reference', reference)
+    .maybeSingle();
+
+  if (error) throw badRequest('payment_lookup_failed', error.message);
+  if (!payment || !isMatchingSuccessfulPayment(data, payment)) return false;
+
+  const meta = metadataFromTransaction(data);
+  const planKey = meta.plan || payment.plan_key;
+  if (!plans[planKey]) return false;
+
+  await activateSubscription({
+    sellerId: payment.seller_id,
+    planKey,
+    reference,
+    providerData: data
+  });
+  return true;
+}
+
+async function activateSubscription({ sellerId, planKey, reference, providerData }) {
   const plan = plans[planKey];
   const now = new Date();
   const periodEnd = addMonths(now, 1);
@@ -77,12 +129,12 @@ async function activateSubscription({ sellerId, planKey, reference, paystackData
     {
       seller_id: sellerId,
       plan_key: planKey,
-      provider: 'paystack',
+      provider: 'flutterwave',
       provider_reference: reference,
       amount: plan.amount,
       currency: plan.currency,
       status: 'paid',
-      provider_payload: paystackData || {}
+      provider_payload: providerData || {}
     },
     { onConflict: 'provider_reference' }
   );
@@ -93,7 +145,7 @@ async function activateSubscription({ sellerId, planKey, reference, paystackData
       plan_key: planKey,
       plan_name: plan.name,
       status: 'active',
-      provider: 'paystack',
+      provider: 'flutterwave',
       provider_reference: reference,
       order_limit: plan.orderLimit,
       current_period_start: now.toISOString(),
@@ -122,25 +174,35 @@ billingRouter.post('/checkout', async (req, res, next) => {
     if (error) throw badRequest('seller_account_lookup_failed', error.message);
     if (!account) throw badRequest('seller_account_not_found', 'Seller account not found.');
 
-    const planCode = process.env[plan.envPlanCode];
     const body = {
-      email: account.email,
-      amount: String(plan.amount),
+      tx_ref: reference,
+      amount: plan.amount,
       currency: plan.currency,
-      reference,
-      callback_url: `${config.webAppUrl}/#dashboard`,
-      metadata: {
+      redirect_url: `${config.webAppUrl}/#dashboard`,
+      payment_options: 'card,mobilemoneyghana',
+      meta: {
         sellerId: input.sellerId,
         plan: input.plan,
+        expectedAmount: plan.amount,
         businessName: account.sellers?.business_name || ''
+      },
+      customer: {
+        email: account.email,
+        name: account.sellers?.business_name || 'ReadySend seller'
+      },
+      customizations: {
+        title: 'ReadySend',
+        description: `${plan.name} monthly subscription`
       }
     };
 
-    if (planCode) {
-      body.plan = planCode;
+    const planId = process.env[plan.envPlanId];
+    const numericPlanId = Number(planId);
+    if (Number.isFinite(numericPlanId) && numericPlanId > 0) {
+      body.payment_plan = numericPlanId;
     }
 
-    const payload = await paystackRequest('/transaction/initialize', {
+    const payload = await flutterwaveRequest('/payments', {
       method: 'POST',
       body: JSON.stringify(body)
     });
@@ -148,7 +210,7 @@ billingRouter.post('/checkout', async (req, res, next) => {
     await supabase.from('payments').insert({
       seller_id: input.sellerId,
       plan_key: input.plan,
-      provider: 'paystack',
+      provider: 'flutterwave',
       provider_reference: reference,
       amount: plan.amount,
       currency: plan.currency,
@@ -157,7 +219,7 @@ billingRouter.post('/checkout', async (req, res, next) => {
     });
 
     res.status(201).json({
-      authorizationUrl: payload.data.authorization_url,
+      authorizationUrl: payload.data.link,
       reference,
       plan: {
         key: input.plan,
@@ -183,18 +245,11 @@ billingRouter.get('/subscription', async (req, res, next) => {
 
 billingRouter.get('/verify/:reference', async (req, res, next) => {
   try {
-    const payload = await paystackRequest(`/transaction/verify/${encodeURIComponent(req.params.reference)}`);
-    const data = payload.data;
+    const data = await verifyFlutterwaveReference(req.params.reference);
 
-    if (data?.status === 'success') {
-      const sellerId = data.metadata?.sellerId;
-      const planKey = data.metadata?.plan;
-      if (sellerId && plans[planKey]) {
-        await activateSubscription({ sellerId, planKey, reference: data.reference, paystackData: data });
-      }
-    }
+    await activateVerifiedTransaction(data);
 
-    res.json({ status: data?.status || 'unknown', reference: data?.reference || req.params.reference });
+    res.json({ status: data?.status || 'unknown', reference: data?.tx_ref || req.params.reference });
   } catch (error) {
     next(error);
   }
@@ -207,21 +262,18 @@ billingRouter.post('/verify-latest', async (req, res, next) => {
       .from('payments')
       .select('*')
       .eq('seller_id', sellerId)
+      .eq('provider', 'flutterwave')
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
 
     if (error) throw badRequest('payment_lookup_failed', error.message);
-    if (!payment) throw badRequest('payment_not_found', 'No Paystack payment has been started for this seller.');
+    if (!payment) throw badRequest('payment_not_found', 'No Flutterwave payment has been started for this seller.');
 
-    const payload = await paystackRequest(`/transaction/verify/${encodeURIComponent(payment.provider_reference)}`);
-    const data = payload.data;
+    const data = await verifyFlutterwaveReference(payment.provider_reference);
 
-    if (data?.status === 'success') {
-      const planKey = data.metadata?.plan || payment.plan_key;
-      if (plans[planKey]) {
-        await activateSubscription({ sellerId, planKey, reference: data.reference, paystackData: data });
-      }
+    if (isMatchingSuccessfulPayment(data, payment)) {
+      await activateVerifiedTransaction(data);
     } else {
       await supabase
         .from('payments')
@@ -233,7 +285,7 @@ billingRouter.post('/verify-latest', async (req, res, next) => {
 
     res.json({
       paymentStatus: data?.status || 'unknown',
-      reference: data?.reference || payment.provider_reference,
+      reference: data?.tx_ref || payment.provider_reference,
       ...subscriptionStatus
     });
   } catch (error) {
@@ -241,25 +293,19 @@ billingRouter.post('/verify-latest', async (req, res, next) => {
   }
 });
 
-paystackWebhookRouter.post('/', async (req, res, next) => {
+flutterwaveWebhookRouter.post('/', async (req, res, next) => {
   try {
-    requirePaystackKey();
-    const signature = req.headers['x-paystack-signature'];
-    const hash = crypto.createHmac('sha512', config.paystackSecretKey).update(req.body).digest('hex');
+    requireFlutterwaveKey();
+    const signature = req.headers['verif-hash'];
 
-    if (!signature || signature !== hash) {
-      throw badRequest('invalid_paystack_signature', 'Invalid Paystack webhook signature.');
+    if (config.flutterwaveWebhookHash && signature !== config.flutterwaveWebhookHash) {
+      throw badRequest('invalid_flutterwave_signature', 'Invalid Flutterwave webhook signature.');
     }
 
     const event = JSON.parse(req.body.toString('utf8'));
-    if (event.event === 'charge.success') {
-      const data = event.data;
-      const sellerId = data.metadata?.sellerId;
-      const planKey = data.metadata?.plan;
-
-      if (sellerId && plans[planKey]) {
-        await activateSubscription({ sellerId, planKey, reference: data.reference, paystackData: data });
-      }
+    if (event.event === 'charge.completed' && event.data?.id) {
+      const data = await verifyFlutterwaveTransaction(event.data.id);
+      await activateVerifiedTransaction(data);
     }
 
     res.json({ received: true });

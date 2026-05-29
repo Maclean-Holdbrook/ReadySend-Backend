@@ -24,7 +24,7 @@ GET /health
 - Buyer receipt pages and confirmation flow.
 - Pending and confirmed order tracking.
 - Monthly order limits by subscription plan.
-- Paystack subscription checkout and webhook handling.
+- Flutterwave subscription checkout and webhook handling.
 - Resend email notifications for contact messages and buyer request alerts.
 
 ## Tech Stack
@@ -32,7 +32,7 @@ GET /health
 - Node.js
 - Express
 - Supabase
-- Paystack
+- Flutterwave
 - Resend
 - Vercel serverless deployment
 
@@ -60,9 +60,10 @@ RESEND_API_KEY=
 CONTACT_TO_EMAIL=
 CONTACT_FROM_EMAIL=ReadySend <onboarding@resend.dev>
 
-PAYSTACK_SECRET_KEY=
-PAYSTACK_PRO_PLAN_CODE=
-PAYSTACK_GROWTH_PLAN_CODE=
+FLUTTERWAVE_SECRET_KEY=
+FLUTTERWAVE_WEBHOOK_HASH=
+FLUTTERWAVE_PRO_PLAN_ID=
+FLUTTERWAVE_GROWTH_PLAN_ID=
 ```
 
 Production values should use:
@@ -89,9 +90,9 @@ Important tables include:
 
 Security note: the backend uses the Supabase service role key and must remain server-side only. RLS is enabled to deny direct client table access; normal app access is expected to go through the backend.
 
-## Paystack
+## Flutterwave
 
-Paystack is used for ReadySend seller subscriptions.
+Flutterwave is used for ReadySend seller subscriptions.
 
 Plans currently supported:
 
@@ -101,9 +102,10 @@ Plans currently supported:
 Set these environment variables in production:
 
 ```env
-PAYSTACK_SECRET_KEY=sk_live_...
-PAYSTACK_PRO_PLAN_CODE=...
-PAYSTACK_GROWTH_PLAN_CODE=...
+FLUTTERWAVE_SECRET_KEY=FLWSECK_LIVE_...
+FLUTTERWAVE_WEBHOOK_HASH=...
+FLUTTERWAVE_PRO_PLAN_ID=...
+FLUTTERWAVE_GROWTH_PLAN_ID=...
 ```
 
 Webhook URL:

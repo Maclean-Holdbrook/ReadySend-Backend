@@ -16,7 +16,8 @@ export const config = {
   supabaseUrl: process.env.SUPABASE_URL,
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
   tokenSecret: process.env.TOKEN_SECRET,
-  paystackSecretKey: process.env.PAYSTACK_SECRET_KEY,
+  flutterwaveSecretKey: process.env.FLUTTERWAVE_SECRET_KEY,
+  flutterwaveWebhookHash: process.env.FLUTTERWAVE_WEBHOOK_HASH,
   webAppUrl: process.env.WEB_APP_URL || 'http://localhost:5173',
   allowedOrigins: (process.env.ALLOWED_ORIGINS || '')
     .split(',')
